@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Waste Classification</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image"></script>
+</head>
+<body>
+    <h1>Waste Classification</h1>
+    <p id="status">Waiting for image...</p>
+    <img id="image" src="" alt="Captured Image" style="display:none;">
+    
+    <script type="text/javascript">
+        let model, labelContainer, maxPredictions;
+
+        // Load the Teachable Machine model
+        async function loadModel() {
+            const modelURL = "https://your-server-url/model.json"; // Replace with the hosted model link
+            const metadataURL = "https://your-server-url/metadata.json"; // Replace with the hosted metadata link
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+        }
+
+        // Capture the image sent by ESP32-CAM
+        async function classifyImage(imageData) {
+            document.getElementById("status").innerText = "Classifying...";
+            let img = document.getElementById("image");
+            img.src = "data:image/jpeg;base64," + imageData;
+
+            // Once the image is loaded, classify it
+            img.onload = async function() {
+                const prediction = await model.predict(img);
+                
+                // Find the highest probability prediction
+                let highestPrediction = prediction[0];
+                for (let i = 1; i < prediction.length; i++) {
+                    if (prediction[i].probability > highestPrediction.probability) {
+                        highestPrediction = prediction[i];
+                    }
+                }
+
+                const wasteType = highestPrediction.className;
+                document.getElementById("status").innerText = "Waste classified as: " + wasteType;
+
+                // Send classification result back to NodeMCU
+                sendClassificationToNodeMCU(wasteType);
+            };
+        }
+
+        // Send classification result to NodeMCU ESP8266
+        function sendClassificationToNodeMCU(classification) {
+            fetch("http://your_nodemcu_ip_address/set_classification", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ classification: classification }),
+            })
+            .then(response => response.text())
+            .then(result => console.log("Result sent to NodeMCU:", result))
+            .catch(error => console.error("Error:", error));
+        }
+
+        // Simulating image data reception (Replace this part with actual image data from ESP32-CAM)
+        function simulateImageReception() {
+            let sampleImage = "base64_encoded_image_data";  // Replace with actual Base64 image data
+            classifyImage(sampleImage);
+        }
+
+        // Load the model once the page is loaded
+        window.onload = async function() {
+            await loadModel();
+            document.getElementById("status").innerText = "Model Loaded. Ready for Image.";
+            
+            // Simulate receiving an image after model load
+            setTimeout(simulateImageReception, 2000);  // For testing purposes
+        };
+    </script>
+</body>
+</html>
