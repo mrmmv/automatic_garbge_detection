@@ -17,8 +17,8 @@
 
         // Load the Teachable Machine model
         async function loadModel() {
-            const modelURL = "https://your-server-url/model.json"; // Replace with the hosted model link
-            const metadataURL = "https://your-server-url/metadata.json"; // Replace with the hosted metadata link
+            const modelURL = "https://teachablemachine.withgoogle.com/models/fk4Khprjr/model.json"; // Replace with the hosted model link
+            const metadataURL = "https://teachablemachine.withgoogle.com/models/fk4Khprjr/metadata.json"; // Replace with the hosted metadata link
             model = await tmImage.load(modelURL, metadataURL);
             maxPredictions = model.getTotalClasses();
         }
