@@ -51,7 +51,7 @@
 
         // Send classification result to NodeMCU ESP8266
         function sendClassificationToNodeMCU(classification) {
-            fetch("http://your_nodemcu_ip_address/set_classification", {
+            fetch("http://192.168.1.5/set_classification", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
