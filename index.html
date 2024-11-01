@@ -4,79 +4,111 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Waste Classification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        #status {
+            font-weight: bold;
+            margin-top: 20px;
+        }
+        #imageDisplay {
+            width: 300px;
+            margin-top: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+        #uploadButton, #simulateButton {
+            margin: 10px;
+            padding: 8px 16px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image"></script>
 </head>
 <body>
     <h1>Waste Classification</h1>
-    <p id="status">Waiting for image...</p>
-    <img id="image" src="" alt="Captured Image" style="display:none;">
+    <input type="file" id="imageUpload" accept="image/*" style="display: none;" />
+    <button id="uploadButton">Upload an Image</button>
+    <button id="simulateButton">Simulate Image</button>
+    <p id="status">Model not loaded yet...</p>
+    <img id="imageDisplay" src="" alt="Uploaded Image" style="display:none;">
     
     <script type="text/javascript">
-        let model, labelContainer, maxPredictions;
+        let model, maxPredictions;
 
         // Load the Teachable Machine model
         async function loadModel() {
-            const modelURL = "https://teachablemachine.withgoogle.com/models/fk4Khprjr/model.json"; // Replace with the hosted model link
-            const metadataURL = "https://teachablemachine.withgoogle.com/models/fk4Khprjr/metadata.json"; // Replace with the hosted metadata link
-            model = await tmImage.load(modelURL, metadataURL);
-            maxPredictions = model.getTotalClasses();
+            const modelURL = "https://teachablemachine.withgoogle.com/models/fk4Khprjr/model.json";
+            const metadataURL = "https://teachablemachine.withgoogle.com/models/fk4Khprjr/metadata.json";
+            
+            if (typeof tmImage !== 'undefined') {
+                model = await tmImage.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+                document.getElementById("status").innerText = "Model loaded. Ready to classify images.";
+            } else {
+                document.getElementById("status").innerText = "Error loading the model. Check your connection or model URL.";
+            }
         }
 
-        // Capture the image sent by ESP32-CAM
-        async function classifyImage(imageData) {
-            document.getElementById("status").innerText = "Classifying...";
-            let img = document.getElementById("image");
-            img.src = "data:image/jpeg;base64," + imageData;
+        // Trigger file upload dialog
+        document.getElementById("uploadButton").addEventListener("click", () => {
+            document.getElementById("imageUpload").click();
+        });
 
-            // Once the image is loaded, classify it
-            img.onload = async function() {
-                const prediction = await model.predict(img);
+        // Handle image upload and display
+        document.getElementById("imageUpload").addEventListener("change", event => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const imageSrc = e.target.result;
+                    classifyImage(imageSrc);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Simulate image reception for testing
+        document.getElementById("simulateButton").addEventListener("click", () => {
+            const sampleImage = "data:image/jpeg;base64,base64_encoded_sample_data";
+            classifyImage(sampleImage);
+        });
+
+        // Classify the image and display results
+        async function classifyImage(imageSrc) {
+            document.getElementById("status").innerText = "Classifying...";
+            const imgElement = document.getElementById("imageDisplay");
+            imgElement.src = imageSrc;
+            imgElement.style.display = "block";
+
+            imgElement.onload = async function() {
+                const prediction = await model.predict(imgElement);
                 
-                // Find the highest probability prediction
+                // Find highest probability prediction
                 let highestPrediction = prediction[0];
                 for (let i = 1; i < prediction.length; i++) {
                     if (prediction[i].probability > highestPrediction.probability) {
                         highestPrediction = prediction[i];
                     }
                 }
-
-                const wasteType = highestPrediction.className;
-                document.getElementById("status").innerText = "Waste classified as: " + wasteType;
-
-                // Send classification result back to NodeMCU
-                sendClassificationToNodeMCU(wasteType);
+                
+                // Display the result
+                document.getElementById("status").innerText = `Waste classified as: ${highestPrediction.className}`;
             };
         }
 
-        // Send classification result to NodeMCU ESP8266
-        function sendClassificationToNodeMCU(classification) {
-            fetch("http://192.168.1.5/set_classification", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ classification: classification }),
-            })
-            .then(response => response.text())
-            .then(result => console.log("Result sent to NodeMCU:", result))
-            .catch(error => console.error("Error:", error));
-        }
-
-        // Simulating image data reception (Replace this part with actual image data from ESP32-CAM)
-        function simulateImageReception() {
-            let sampleImage = "base64_encoded_image_data";  // Replace with actual Base64 image data
-            classifyImage(sampleImage);
-        }
-
-        // Load the model once the page is loaded
-        window.onload = async function() {
-            await loadModel();
-            document.getElementById("status").innerText = "Model Loaded. Ready for Image.";
-            
-            // Simulate receiving an image after model load
-            setTimeout(simulateImageReception, 2000);  // For testing purposes
-        };
+        // Load the model on page load
+        window.onload = loadModel;
     </script>
 </body>
 </html>
