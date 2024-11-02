@@ -4,111 +4,129 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Waste Classification</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 20px;
-        }
-        h1 {
-            color: #333;
-        }
-        #status {
-            font-weight: bold;
-            margin-top: 20px;
-        }
-        #imageDisplay {
-            width: 300px;
-            margin-top: 10px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-        }
-        #uploadButton, #simulateButton {
-            margin: 10px;
-            padding: 8px 16px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-    </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image/dist/teachablemachine-image.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 </head>
 <body>
     <h1>Waste Classification</h1>
-    <input type="file" id="imageUpload" accept="image/*" style="display: none;" />
-    <button id="uploadButton">Upload an Image</button>
-    <button id="simulateButton">Simulate Image</button>
-    <p id="status">Model not loaded yet...</p>
-    <img id="imageDisplay" src="" alt="Uploaded Image" style="display:none;">
-    
+    <p id="status">Waiting for image...</p>
+    <img id="image" src="" alt="Captured Image" style="display:none; width: 100%; max-width: 600px;">
+    <div id="label-container"></div>
+
     <script type="text/javascript">
+        const MODEL_URL = "https://teachablemachine.withgoogle.com/models/fk4Khprjr/";
         let model, maxPredictions;
+        let lastImageKey = null;  // Stores the key of the last processed image
+        let lastClassification = "";  // Stores the last classification result
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDFeZJiNMtV29YPQ7F2FbpeWT5q3asRGCE",
+            authDomain: "herby-21c6a.firebaseapp.com",
+            databaseURL: "https://herby-21c6a-default-rtdb.firebaseio.com",
+            projectId: "herby-21c6a",
+            storageBucket: "herby-21c6a.firebasestorage.app",
+            messagingSenderId: "374602315706",
+            appId: "1:374602315706:web:ff0fc7b12017eb125c0f83"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
 
         // Load the Teachable Machine model
         async function loadModel() {
-            const modelURL = "https://teachablemachine.withgoogle.com/models/fk4Khprjr/model.json";
-            const metadataURL = "https://teachablemachine.withgoogle.com/models/fk4Khprjr/metadata.json";
-            
-            if (typeof tmImage !== 'undefined') {
-                model = await tmImage.load(modelURL, metadataURL);
+            try {
+                model = await tmImage.load(MODEL_URL + "model.json", MODEL_URL + "metadata.json");
                 maxPredictions = model.getTotalClasses();
-                document.getElementById("status").innerText = "Model loaded. Ready to classify images.";
-            } else {
-                document.getElementById("status").innerText = "Error loading the model. Check your connection or model URL.";
+                document.getElementById("status").innerText = "Model Loaded. Waiting for Image...";
+            } catch (error) {
+                console.error("Error loading the model:", error);
+                document.getElementById("status").innerText = "Error loading the model.";
             }
         }
 
-        // Trigger file upload dialog
-        document.getElementById("uploadButton").addEventListener("click", () => {
-            document.getElementById("imageUpload").click();
-        });
+        // Retrieve the latest Base64 image from Firebase and classify it if it's new
+        async function updateImageAndClassify() {
+            document.getElementById("status").innerText = "Checking for new image in Firebase...";
 
-        // Handle image upload and display
-        document.getElementById("imageUpload").addEventListener("change", event => {
-            const file = event.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const imageSrc = e.target.result;
-                    classifyImage(imageSrc);
-                };
-                reader.readAsDataURL(file);
-            }
-        });
+            // Access the latest image Base64 data in Firebase
+            const dbRef = firebase.database().ref('/images');
+            dbRef.limitToLast(1).once('value', async (snapshot) => {
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    const imageKey = Object.keys(data)[0];  // Get the key of the latest image
+                    const base64ImageData = data[imageKey].image;  // Access base64 image data
 
-        // Simulate image reception for testing
-        document.getElementById("simulateButton").addEventListener("click", () => {
-            const sampleImage = "data:image/jpeg;base64,base64_encoded_sample_data";
-            classifyImage(sampleImage);
-        });
+                    // Only process if the image is new
+                    if (imageKey !== lastImageKey) {
+                        lastImageKey = imageKey;  // Update last processed image key
 
-        // Classify the image and display results
-        async function classifyImage(imageSrc) {
-            document.getElementById("status").innerText = "Classifying...";
-            const imgElement = document.getElementById("imageDisplay");
-            imgElement.src = imageSrc;
-            imgElement.style.display = "block";
+                        const img = document.getElementById("image");
+                        img.src = "data:image/jpeg;base64," + base64ImageData;
+                        img.style.display = "block";
+                        document.getElementById("status").innerText = "Classifying Image...";
 
-            imgElement.onload = async function() {
-                const prediction = await model.predict(imgElement);
-                
-                // Find highest probability prediction
-                let highestPrediction = prediction[0];
-                for (let i = 1; i < prediction.length; i++) {
-                    if (prediction[i].probability > highestPrediction.probability) {
-                        highestPrediction = prediction[i];
+                        // Wait for the image to load before classifying
+                        img.onload = async () => {
+                            await classifyImage(img);
+                        };
+                    } else {
+                        document.getElementById("status").innerText = "No new image found in Firebase.";
                     }
+                } else {
+                    console.log("Snapshot does not exist.");
+                    document.getElementById("status").innerText = "No image found in Firebase.";
                 }
-                
-                // Display the result
-                document.getElementById("status").innerText = `Waste classified as: ${highestPrediction.className}`;
-            };
+            });
         }
 
-        // Load the model on page load
-        window.onload = loadModel;
+        // Classify the displayed image
+        async function classifyImage(img) {
+            const prediction = await model.predict(img);
+            const highestPrediction = prediction.reduce((max, pred) => pred.probability > max.probability ? pred : max);
+
+            let classificationResult;
+            if (highestPrediction.probability >= 0.7) {
+                classificationResult = highestPrediction.className;
+                document.getElementById("status").innerText = "Waste classified as: " + classificationResult;
+            } else {
+                classificationResult = "Unknown";
+                document.getElementById("status").innerText = "Waste classified as: Unknown";
+            }
+
+            // Display all predictions
+            const labelContainer = document.getElementById("label-container");
+            labelContainer.innerHTML = "";
+            prediction.forEach(pred => {
+                const classPrediction = `${pred.className}: ${pred.probability.toFixed(2)}`;
+                const labelElement = document.createElement("div");
+                labelElement.innerText = classPrediction;
+                labelContainer.appendChild(labelElement);
+            });
+
+            // Send classification to Firebase if it's different from the last classification
+            if (classificationResult !== lastClassification) {
+                lastClassification = classificationResult;
+                sendClassificationToFirebase(classificationResult);
+            }
+        }
+
+        // Send classification result to Firebase
+        function sendClassificationToFirebase(classification) {
+            const dbRef = firebase.database().ref('/classification');
+            dbRef.set({ classification: classification })
+                .then(() => console.log("Classification saved to Firebase:", classification))
+                .catch(error => console.error("Error saving classification to Firebase:", error));
+        }
+
+        // Load the model and check for new images once
+        window.onload = async function() {
+            await loadModel();
+            updateImageAndClassify();  // Check for a new image once at the beginning
+            setInterval(updateImageAndClassify, 5000);  // Recheck every 5 seconds
+        };
     </script>
 </body>
 </html>
